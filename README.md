@@ -43,10 +43,12 @@
 | 수강 신청 | `POST /applications` `{ "cohortId": 3 }` | 수강생 |
 | 내 신청 / 신청 취소 | `GET /me/applications`, `POST /applications/:id/cancel` | 수강생(본인) |
 | 운영 현황 | `GET /admin/stats` | 관리자 |
-| 문의·챗봇 기록 | `GET /admin/inquiries` | 관리자 |
+| 문의 내역 (로그인·비로그인 대화) | `GET /admin/inquiries` | 관리자 |
+| 운영팀 답변 보내기 | `POST /admin/inquiries/:key/replies` `{ "message": "..." }` | 관리자 |
 | 가상 데이터 다시 채우기 | `POST /admin/reset` | 관리자 |
-| 상담 챗봇 | `POST /chat` `{ "message": "...", "history": [] }` | 누구나 |
-| 운영팀 문의 | `POST /inquiries` | 수강생 |
+| 상담 챗봇 | `POST /chat` `{ "message": "...", "history": [], "visitorId": "..." }` | 누구나 |
+| 운영팀 답변 받기 | `GET /chat/replies?visitorId=` (로그인이면 계정 기준) | 누구나(본인 것) |
+| 운영팀 문의 / 내 문의·답변 | `POST /inquiries`, `GET /me/inquiries` | 수강생 |
 
 로그인 후 받은 토큰은 `Authorization: Bearer <토큰>` 헤더로 보냅니다.
 
@@ -54,17 +56,23 @@
 
 ```
 courses 1 ──< N cohorts 1 ──< N applications >── 1 users
-courses 1 ──< N course_views        users 1 ──< N inquiries, chat_logs
+courses 1 ──< N course_views        users 1 ──< N inquiries, chat_logs, admin_replies
 ```
 
 - `cohorts`에 `apply_deadline`(신청 마감일)이 추가되었습니다.
 - `applications`: 기수·계정·상태(applied·cancelled)·신청/취소 시각
 - `course_views`: 상세 조회 기록 (신청 전환 현황)
-- `inquiries`, `chat_logs`: 운영팀 문의와 챗봇 질문 기록
+- `inquiries`, `chat_logs`: 운영팀 문의와 챗봇 질문 기록 (`chat_logs.visitor_id`: 비로그인 방문자 구분용 브라우저 임의 ID)
+- `admin_replies`: 운영팀 답변 (계정 또는 방문자 ID 대상)
 
 ## 상담 챗봇 (GPT API)
 
 `POST /chat`이 질문을 받을 때마다 DB의 최신 과정·기수 정보(개강일, 신청 마감일, 수강료, 남은 자리)를 함께 GPT에 보내고, 그 정보 안에서만 답하게 합니다. 정보에 없는 질문은 `needsHuman: true`로 돌려주어 화면이 운영팀 문의로 연결합니다. GPT 키는 이 서버의 설정값에만 있고 프론트엔드에는 없습니다.
+
+**대화 저장 정책**
+- 로그인 대화는 계정에, 비로그인 대화는 브라우저가 만든 방문자 ID에 묶습니다. IP는 쓰지 않습니다.
+- 전화번호·이메일·주민등록번호·카드번호는 GPT에 보내기 전과 저장하기 전에 가립니다 (`src/privacy.ts`).
+- 비로그인 대화와 그 답변은 30일 뒤 삭제합니다. 로그인 전 대화를 계정에 합치지 않습니다.
 
 ## 설정값
 
