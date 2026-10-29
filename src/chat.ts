@@ -1,9 +1,10 @@
-import { BadRequestException, Body, Controller, Headers, Injectable, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Injectable, Post, Query } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { AuthService } from './auth.js';
 import { CoursesService } from './courses.service.js';
-import { ChatLog, Course, Inquiry, type User } from './entities.js';
+import { AdminReply, ChatLog, Course, Inquiry, type User } from './entities.js';
+import { GUEST_CHAT_RETENTION_DAYS, maskPersonalInfo, parseVisitorId } from './privacy.js';
 import { todayKST } from './validation.js';
 
 const MODEL = process.env.GPT_MODEL || 'gpt-4.1-mini';
@@ -61,14 +62,18 @@ export class ChatService {
 
   async ask(user: User | null, body: unknown) {
     const b = (body ?? {}) as Record<string, unknown>;
-    const question = typeof b.message === 'string' ? b.message.trim() : '';
-    if (!question) throw new BadRequestException({ message: '궁금한 점을 입력해 주세요.' });
-    if (question.length > MAX_QUESTION) throw new BadRequestException({ message: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` });
+    const raw = typeof b.message === 'string' ? b.message.trim() : '';
+    if (!raw) throw new BadRequestException({ message: '궁금한 점을 입력해 주세요.' });
+    if (raw.length > MAX_QUESTION) throw new BadRequestException({ message: `질문은 ${MAX_QUESTION}자 이내로 적어 주세요.` });
+    // 개인정보 형태는 GPT로 보내기 전과 저장하기 전에 모두 가린다 (원본은 남기지 않음)
+    const question = maskPersonalInfo(raw);
+    // 로그인했으면 계정으로, 아니면 브라우저 방문자 ID로 구분한다 (로그인 전후 기록은 합치지 않음)
+    const visitorId = user ? null : parseVisitorId(b.visitorId);
 
     const history: Turn[] = (Array.isArray(b.history) ? b.history : [])
       .filter((t): t is Turn => !!t && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
       .slice(-MAX_HISTORY)
-      .map((t) => ({ role: t.role, content: t.content.slice(0, 600) }));
+      .map((t) => ({ role: t.role, content: maskPersonalInfo(t.content.slice(0, 600)) }));
 
     let result: { answer: string; courseIds: number[]; needsHuman: boolean };
     try {
@@ -82,8 +87,33 @@ export class ChatService {
     const ids = result.courseIds.length ? await this.db.getRepository(Course).findBy(result.courseIds.map((id) => ({ id }))) : [];
     const courses = ids.map((c) => ({ id: c.id, title: c.title, category: c.category }));
 
-    await this.db.getRepository(ChatLog).insert({ userId: user?.id ?? null, question, answer: result.answer, needsHuman: result.needsHuman });
-    return { answer: result.answer, courses, needsHuman: result.needsHuman };
+    await this.db.getRepository(ChatLog).insert({ userId: user?.id ?? null, visitorId, question, answer: result.answer, needsHuman: result.needsHuman });
+    await this.purgeOldGuestChats();
+    return { answer: result.answer, courses, needsHuman: result.needsHuman, saved: user ? 'account' : 'guest' };
+  }
+
+  // 로그인하지 않은 방문자의 챗봇 기록과 그 방문자에게 보낸 답변은 보관 기간(30일)이 지나면 지운다
+  async purgeOldGuestChats() {
+    for (const entity of [ChatLog, AdminReply]) {
+      await this.db
+        .getRepository(entity)
+        .createQueryBuilder()
+        .delete()
+        .where('user_id IS NULL')
+        .andWhere(`created_at < now() - make_interval(days => :days)`, { days: GUEST_CHAT_RETENTION_DAYS })
+        .execute();
+    }
+  }
+
+  // 챗봇에 보여 줄 운영팀 답변: 로그인했으면 계정으로, 아니면 이 브라우저의 방문자 ID로 찾는다
+  async repliesFor(user: User | null, visitorIdRaw: unknown) {
+    const visitorId = parseVisitorId(visitorIdRaw);
+    if (!user && !visitorId) return [];
+    const rows = await this.db.getRepository(AdminReply).find({
+      where: user ? { userId: user.id } : { visitorId: visitorId!, userId: IsNull() },
+      order: { createdAt: 'ASC' },
+    });
+    return rows.map((r) => ({ id: r.id, at: r.createdAt, text: r.message }));
   }
 
   private async callGpt(messages: { role: string; content: string }[]) {
@@ -105,11 +135,24 @@ export class ChatService {
     };
   }
 
+  // 내 문의와 운영팀 답변 (수강생 본인 것만, 시간순)
+  async myInquiries(user: User) {
+    const [inquiries, replies] = await Promise.all([
+      this.db.getRepository(Inquiry).find({ where: { userId: user.id }, order: { createdAt: 'ASC' } }),
+      this.db.getRepository(AdminReply).find({ where: { userId: user.id }, order: { createdAt: 'ASC' } }),
+    ]);
+    return [
+      ...inquiries.map((q) => ({ type: 'inquiry' as const, id: q.id, at: q.createdAt, text: q.message })),
+      ...replies.map((r) => ({ type: 'reply' as const, id: r.id, at: r.createdAt, text: r.message })),
+    ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  }
+
   // 챗봇이 답하지 못한 질문 등을 운영팀 문의로 남긴다 (수강생만)
   async inquire(user: User, body: unknown) {
     const b = (body ?? {}) as Record<string, unknown>;
     const message = typeof b.message === 'string' ? b.message.trim() : '';
-    const chatQuestion = typeof b.chatQuestion === 'string' ? b.chatQuestion.trim().slice(0, MAX_QUESTION) : '';
+    // 챗봇에서 이어진 질문은 챗봇 기록과 같은 기준으로 가려서 남긴다. 문의 본문은 운영팀에 직접 보내는 내용이라 그대로 둔다
+    const chatQuestion = typeof b.chatQuestion === 'string' ? maskPersonalInfo(b.chatQuestion.trim().slice(0, MAX_QUESTION)) : '';
     const courseId = Number(b.courseId);
     if (message.length < 5 || message.length > 500) {
       throw new BadRequestException({ message: '입력한 내용을 다시 확인해 주세요.', errors: { message: '문의 내용을 5자 이상, 500자 이내로 적어 주세요.' } });
@@ -131,6 +174,18 @@ export class ChatController {
   @Post('chat')
   async ask(@Headers('authorization') authorization: string | undefined, @Body() body: unknown) {
     return this.chat.ask(await this.auth.optional(authorization), body);
+  }
+
+  // 챗봇 창에서 운영팀 답변 확인 (로그인 수강생 또는 같은 브라우저의 비로그인 방문자)
+  @Get('chat/replies')
+  async replies(@Headers('authorization') authorization: string | undefined, @Query('visitorId') visitorId?: string) {
+    return this.chat.repliesFor(await this.auth.optional(authorization), visitorId);
+  }
+
+  @Get('me/inquiries')
+  async mine(@Headers('authorization') authorization: string | undefined) {
+    const user = await this.auth.require(authorization, 'member');
+    return this.chat.myInquiries(user);
   }
 
   @Post('inquiries')

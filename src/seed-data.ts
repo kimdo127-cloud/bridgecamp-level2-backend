@@ -181,9 +181,16 @@ export const SEED_INQUIRIES = [
   { user: "student2", course: 1, message: "회사에서 교육비 지원을 받으려고 하는데 세금계산서 발행이 되나요?", chatQuestion: "", daysAgo: 0 },
 ];
 
-export const SEED_CHATS = [
+// 가상 챗봇 기록. visitor는 로그인 전 방문자의 브라우저 방문자 ID(UUID)로, 같은 값이면 운영 화면에서 한 사람으로 묶인다
+export const SEED_CHATS: { user: string | null; visitor?: string; question: string; answer: string; needsHuman: boolean; daysAgo: number }[] = [
   { user: "student", question: "이번 달에 개강하는 온라인 과정 있어요?", answer: "네, 노코드로 MVP 만들기 4기와 ChatGPT 업무 자동화 입문 6기가 곧 개강해요.", needsHuman: false, daysAgo: 2 },
-  { user: null, question: "SQL 처음인데 들어도 되나요?", answer: "SQL로 시작하는 데이터 분석은 초급 과정이라 엑셀을 써 본 적이 있으면 충분해요.", needsHuman: false, daysAgo: 1 },
   { user: "student", question: "부트캠프 결석하면 수료 못 하나요?", answer: "출결 기준은 과정 정보에 없어서 운영팀 확인이 필요해요.", needsHuman: true, daysAgo: 1 },
-  { user: null, question: "환불 규정이 어떻게 되나요?", answer: "환불 규정은 과정 정보에 없어서 운영팀에 문의를 남겨 주세요.", needsHuman: true, daysAgo: 0 },
+  { user: null, visitor: "3f2a9c1e-7b4d-4e2a-9f10-2c8d5e6a7b01", question: "SQL 처음인데 들어도 되나요?", answer: "SQL로 시작하는 데이터 분석은 초급 과정이라 엑셀을 써 본 적이 있으면 충분해요.", needsHuman: false, daysAgo: 1 },
+  { user: null, visitor: "3f2a9c1e-7b4d-4e2a-9f10-2c8d5e6a7b01", question: "SQL 4기는 언제 신청 마감이에요?", answer: "SQL로 시작하는 데이터 분석 4기는 개강 전날까지 신청할 수 있어요.", needsHuman: false, daysAgo: 1 },
+  { user: null, visitor: "8d61b0f4-2a3e-4c9b-8e7d-5f1a3b2c9d04", question: "환불 규정이 어떻게 되나요?", answer: "환불 규정은 과정 정보에 없어서 운영팀에 문의를 남겨 주세요.", needsHuman: true, daysAgo: 0 },
+];
+
+// 가상 운영팀 답변. 이배움의 문의에는 답변이 끝났고, 김수강의 문의는 답변 대기 상태로 둔다
+export const SEED_REPLIES = [
+  { user: "student2", message: "안녕하세요, 브릿지캠프 운영팀입니다. 교육비 지원용 세금계산서 발행이 가능해요. 사업자등록증을 보내 주시면 결제일 기준으로 발행해 드릴게요.", minutesAgo: 0 },
 ];

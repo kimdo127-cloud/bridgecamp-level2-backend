@@ -1,6 +1,6 @@
 import pg from 'pg';
 import type { DataSourceOptions } from 'typeorm';
-import { Application, ChatLog, Cohort, Course, CourseView, Inquiry, User } from './entities.js';
+import { AdminReply, Application, ChatLog, Cohort, Course, CourseView, Inquiry, User } from './entities.js';
 
 // 이 과제가 쓰는 DB 안의 공간(스키마). 두 번째 과제는 다른 이름을 써서 테이블이 섞이지 않게 한다.
 export const DB_SCHEMA = process.env.DB_SCHEMA || 'level2';
@@ -23,7 +23,7 @@ export function dataSourceOptions(): DataSourceOptions {
     url,
     schema: DB_SCHEMA,
     ssl: needsSsl(url) ? { rejectUnauthorized: false } : false,
-    entities: [Course, Cohort, User, Application, CourseView, Inquiry, ChatLog],
+    entities: [Course, Cohort, User, Application, CourseView, Inquiry, ChatLog, AdminReply],
     // 작은 과제라 마이그레이션 대신 엔티티 정의대로 테이블을 맞춘다
     synchronize: true,
   };

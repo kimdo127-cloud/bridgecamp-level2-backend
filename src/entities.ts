@@ -206,7 +206,8 @@ export class Inquiry {
   createdAt: Date;
 }
 
-// chat_logs: 챗봇 질문과 답변 기록. 관리자가 자주 묻는 질문을 확인한다
+// chat_logs: 챗봇 질문과 답변 기록. 관리자가 사람별(로그인 계정 / 브라우저 방문자 ID)로 묶어 본다.
+// 질문은 개인정보 형태를 가린 뒤 저장하고, 로그인하지 않은 방문자 기록은 30일 뒤 지운다
 @Entity('chat_logs')
 export class ChatLog {
   @PrimaryGeneratedColumn()
@@ -219,6 +220,10 @@ export class ChatLog {
   @JoinColumn({ name: 'user_id' })
   user: Relation<User> | null;
 
+  // 로그인하지 않은 방문자를 구분하는 브라우저 무작위 ID (UUID). 신원 정보는 담기지 않는다
+  @Column({ name: 'visitor_id', type: 'varchar', length: 36, nullable: true })
+  visitorId: string | null;
+
   @Column({ type: 'text' })
   question: string;
 
@@ -227,6 +232,33 @@ export class ChatLog {
 
   @Column({ name: 'needs_human', type: 'boolean', default: false })
   needsHuman: boolean;
+
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
+  createdAt: Date;
+}
+
+// admin_replies: 운영 매니저의 답변. 로그인 수강생에게는 계정으로(내 신청·챗봇에서 확인),
+// 비로그인 방문자에게는 브라우저 방문자 ID로(같은 브라우저로 챗봇을 열면 확인) 전달한다
+@Entity('admin_replies')
+export class AdminReply {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column({ name: 'user_id', type: 'integer', nullable: true })
+  userId: number | null;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user: Relation<User> | null;
+
+  @Column({ name: 'visitor_id', type: 'varchar', length: 36, nullable: true })
+  visitorId: string | null;
+
+  @Column({ name: 'admin_id', type: 'integer', nullable: true })
+  adminId: number | null;
+
+  @Column({ type: 'text' })
+  message: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

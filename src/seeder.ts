@@ -2,11 +2,11 @@ import { randomBytes } from 'node:crypto';
 import type { DataSource } from 'typeorm';
 import { hashPassword } from './auth.js';
 import { DB_SCHEMA } from './db.js';
-import { Application, ChatLog, Cohort, Course, CourseView, Inquiry, User } from './entities.js';
-import { SEED_APPLICATIONS, SEED_CHATS, SEED_COHORTS, SEED_COURSES, SEED_INQUIRIES, SEED_USERS, SEED_VIEWS } from './seed-data.js';
+import { AdminReply, Application, ChatLog, Cohort, Course, CourseView, Inquiry, User } from './entities.js';
+import { SEED_APPLICATIONS, SEED_CHATS, SEED_REPLIES, SEED_COHORTS, SEED_COURSES, SEED_INQUIRIES, SEED_USERS, SEED_VIEWS } from './seed-data.js';
 import { dayBefore, todayKST } from './validation.js';
 
-const TABLES = ['chat_logs', 'inquiries', 'course_views', 'applications', 'cohorts', 'courses', 'users'];
+const TABLES = ['admin_replies', 'chat_logs', 'inquiries', 'course_views', 'applications', 'cohorts', 'courses', 'users'];
 
 function addDays(date: string, days: number) {
   return new Date(Date.parse(date) + days * 86_400_000).toISOString().slice(0, 10);
@@ -70,7 +70,13 @@ export async function seedDatabase(db: DataSource) {
     }
     for (const c of SEED_CHATS) {
       await tx.getRepository(ChatLog).save(
-        tx.getRepository(ChatLog).create({ userId: c.user ? users.get(c.user)!.id : null, question: c.question, answer: c.answer, needsHuman: c.needsHuman, createdAt: daysAgo(c.daysAgo) }),
+        tx.getRepository(ChatLog).create({ userId: c.user ? users.get(c.user)!.id : null, visitorId: c.visitor ?? null, question: c.question, answer: c.answer, needsHuman: c.needsHuman, createdAt: daysAgo(c.daysAgo) }),
+      );
+    }
+
+    for (const r of SEED_REPLIES) {
+      await tx.getRepository(AdminReply).save(
+        tx.getRepository(AdminReply).create({ userId: users.get(r.user)!.id, adminId: users.get('admin')!.id, message: r.message, createdAt: new Date(Date.now() - r.minutesAgo * 60_000) }),
       );
     }
 
